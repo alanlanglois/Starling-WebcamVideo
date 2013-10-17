@@ -1,5 +1,5 @@
 /**
- *	Copyright (c) 2013 Michael Trenkler
+ *	Copyright (c) 2013 Michael Trenkler & Alan Langlois
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -22,10 +22,8 @@
 
 package de.flintfabrik.starling.display
 {
-	import de.flintfabrik.starling.events.VideoEvent;
 	import flash.desktop.*;
 	import flash.display.BitmapData;
-	import flash.display3D.Context3D;
 	import flash.display3D.Context3DProfile;
 	import flash.display3D.textures.*;
 	import flash.events.Event;
@@ -33,34 +31,32 @@ package de.flintfabrik.starling.display
 	import flash.geom.Matrix;
 	import flash.geom.Rectangle;
 	import flash.media.Camera;
+	import flash.media.CameraPosition;
 	import flash.media.Video;
 	import flash.system.Capabilities;
 	import flash.utils.ByteArray;
 	import flash.utils.Endian;
 	import flash.utils.getDefinitionByName;
 	import flash.utils.getQualifiedClassName;
-	import flash.utils.getTimer;
 	import starling.core.RenderSupport;
 	import starling.core.Starling;
-	import starling.display.BlendMode;
 	import starling.display.Quad;
-	import starling.errors.MissingContextError;
 	import starling.events.Event;
+	import de.flintfabrik.starling.display.data.CameraParams;
+	import de.flintfabrik.starling.display.events.VideoEvent;
 	import starling.textures.ConcreteTexture;
 	import starling.textures.Texture;
 	import starling.textures.TextureSmoothing;
+	import starling.utils.deg2rad;
 	import starling.utils.getNextPowerOfTwo;
 	import starling.utils.VertexData;
 	
-	
-	
 	/** Dispatched when a new frame of the camera is available. */
-    [Event(name="videoFrame", type="de.flintfabrik.starling.events.VideoEvent")]
-    /** Dispatched after a new frame has been drawn to BitmapData/ByteArray. */
-    [Event(name="drawComplete", type="de.flintfabrik.starling.events.VideoEvent")]
-    /** Dispatched after a new frame has been uploaded from the BitmapData/ByteArray to texture. */
-    [Event(name="uploadComplete", type="de.flintfabrik.starling.events.VideoEvent")]
-    
+	[Event(name="videoFrame",type="de.flintfabrik.starling.events.VideoEvent")]
+	/** Dispatched after a new frame has been drawn to BitmapData/ByteArray. */
+	[Event(name="drawComplete",type="de.flintfabrik.starling.events.VideoEvent")]
+	/** Dispatched after a new frame has been uploaded from the BitmapData/ByteArray to texture. */
+	[Event(name="uploadComplete",type="de.flintfabrik.starling.events.VideoEvent")]
 	
 	/** A WebcamVideo is a Quad with a texture mapped onto it.
 	 *
@@ -90,14 +86,12 @@ package de.flintfabrik.starling.display
 	 *  </ul>
 	 *  </p>
 	 *
-	 *  @see starling.textures.Texture
-	 *  @see starling.display.Quad
+
 	 *
-	 *  @see http://www.flintfabrik.de/blog/camera-performance-with-stage3d
-	 *  @author Michael Trenkler
+	 *  @author Alan Langlois based on the Michael Trenkler's work
 	 */
 	
-	public class WebcamVideo extends starling.display.Quad
+	public class WebcamVideo extends Quad
 	{
 		
 		public static const DRAW_BITMAPDATA:int = 0;
@@ -111,11 +105,10 @@ package de.flintfabrik.starling.display
 		private static const BIT_ALPHA:int = 2;
 		private static const BIT_UPLOAD:int = 4;
 		
-		public static var statsPrecision:uint = 15;
-		
 		private var mCamera:Camera = new Camera();
 		private var mBitmapData:BitmapData;
 		private var mByteArray:ByteArray;
+		private var mOriginFrame:Rectangle = new Rectangle();
 		private var mFrame:Rectangle = new Rectangle();
 		private var mFrameMatrix:Matrix = new Matrix();
 		private var mVideo:flash.media.Video = new flash.media.Video();
@@ -133,13 +126,12 @@ package de.flintfabrik.starling.display
 		private var mStrategy:int = 0;
 		private var mTextureClass:Class;
 		private var mNativeApplicationClass:Class;
-		private var mTime:uint;
-		private var mStatsDrawTime:Vector.<uint> = new Vector.<uint>();
-		private var mStatsUploadTime:Vector.<uint> = new Vector.<uint>();
-		private var mStatsDrawnFrames:uint = 0;
-		private var mStatsUploadedFrames:uint = 0;
 		private var mVertexDataCache:VertexData;
 		private var mVertexDataCacheInvalid:Boolean;
+		private var mCurrentRotation:String;
+		private var mCurrentCameraID:int;
+		private var mCameraList:Array;
+		private var mCamParams:CameraParams;
 		
 		/** Creates a WebcamVideo
 		 * @param camera
@@ -157,168 +149,19 @@ package de.flintfabrik.starling.display
 		 * function for uploading
 		 * DRAW_CAMERA uses camera.drawToBitmapData / camera.copyToByteArray to capture the video
 		 * DRAW_BITMAPDATA will use the bitmapData.draw(video) method (and bitmapData.copyToByteArray if necessary)
-		 * @default	WebcamVideo.DRAW_CAMERA + WebcamVideo.OPAQUE + WebcamVideo.UPLOAD_FROM_BITMAPDATA
-		 * 
+		 * @default        WebcamVideo.DRAW_CAMERA + WebcamVideo.OPAQUE + WebcamVideo.UPLOAD_FROM_BITMAPDATA
+		 *
 		 * @example The following code shows a simple usage in Flash 11.8 / AIR 3.8 and above:
-		 * <listing version="3.8">
-package
-{
-	import de.flintfabrik.starling.display.WebcamVideo;
-	import de.flintfabrik.starling.events.VideoEvent;
-	
-	import flash.geom.Rectangle;
-	import flash.media.CameraPosition;
-	import flash.media.Camera;
-	import flash.events.TimerEvent;
-	import flash.utils.Timer;
-	
-	import starling.core.Starling;
-	import starling.display.Sprite;
-	import starling.textures.Texture;
-	import starling.text.TextField;
-	
-	public class WebcamTest extends Sprite
-	{
+		 * <listing version="3.8">**/
 		
-		private var webcamVideo:WebcamVideo;
-		private var statsTextField:TextField;
-		private var statsTimer:Timer = new Timer(1000, 0);
-		private var camera:Camera;
-		
-		public function WebcamTest()
+		public function WebcamVideo( rect:Rectangle, autoStart:Boolean = true, strategy:uint = 0)
 		{
-		
-			camera = Camera.getCamera();
-			camera.setLoopback(false);
-			camera.setMode(1280, 720, 15);
-		
-			webcamVideo = new WebcamVideo(camera);
-			center(webcamVideo);
-			addChild(webcamVideo);
-		
-			statsTextField = new TextField(200, 100, &quot;CAMERA DEBUG&quot;, &quot;Arial&quot;, 10, 0xFF00FF, true);
-			statsTextField.hAlign = &quot;left&quot;;
-			statsTextField.vAlign = &quot;top&quot;;
-			statsTextField.y = 26;
-			addChild(statsTextField);
-		
-			statsTimer.addEventListener(TimerEvent.TIMER, statsTimer_timerHandler);
-			statsTimer.start();
 			
-		}
-		
-		private function center(wv:WebcamVideo):void
-		{
-			wv.height = Starling.current.stage.stageHeight;
-			wv.scaleX = wv.scaleY;
-			wv.x = (Starling.current.stage.stageWidth - wv.width) ~~ .5;
-			wv.y = (Starling.current.stage.stageHeight - wv.height) ~~ .5;
-			wv.flipHorizontal = wv.camera.position != CameraPosition.BACK;
-		}
-		
-		
-		private function statsTimer_timerHandler(e:TimerEvent):void {
-			statsTextField.text = &quot;FPS:\t&quot; + camera.currentFPS.toFixed(1) + &quot;/&quot; + camera.fps.toFixed(1)
-			+ &quot;\ncam:\t&quot; + camera.width + &quot;x&quot; + camera.height
-			+ &quot;\ntextureClass: &quot; + webcamVideo.texture.root.base
-			+ &quot;\ntexture:\t&quot; + webcamVideo.texture.root.nativeWidth + &quot;x&quot; +  webcamVideo.texture.root.nativeHeight
-			+ &quot;\ndraw:\t&quot; + webcamVideo.drawTime.toFixed(2) + &quot; ms&quot;
-			+ &quot;\nupload:\t&quot; + webcamVideo.uploadTime.toFixed(2) + &quot; ms&quot;
-			+ &quot;\ncomplete:\t&quot; + (webcamVideo.drawTime+webcamVideo.uploadTime).toFixed(2)+&quot; ms&quot;;
-		}
-	}
-}
-		 * </listing>
-		 *
-		 * @example In versions Flash 11.7 / AIR 3.7 and below make sure to use a clipping Rect and adjust the strategy, e.g. like this:
-		 * <listing>
-camera.setMode(640, 640, 15);
-var cropping:Rectangle = new Rectangle(0, 0, getLowerPowerOfTwo(camera.width), getLowerPowerOfTwo(camera.height));
-webcamVideo = new WebcamVideo(camera, new Rectangle( (camera.width-cropping.width)~~.5, (camera.height-cropping.height)~~.5, cropping.width, cropping.height), true, WebcamVideo.DRAW_BITMAPDATA|WebcamVideo.UPLOAD_FROM_BITMAPDATA);
-		 * </listing>
-		 *
-		 * @example Full example (Flash 11.7 / AIR 3.7 and below):
-		 * <listing>
-package {
-	import de.flintfabrik.starling.display.WebcamVideo;
-	import de.flintfabrik.starling.events.VideoEvent;
-	
-	import flash.geom.Rectangle;
-	import flash.media.CameraPosition;
-	import flash.media.Camera;
-	import flash.events.TimerEvent;
-	import flash.utils.Timer;
-	
-	import starling.core.Starling;
-	import starling.display.Sprite;
-	import starling.textures.Texture;
-	import starling.text.TextField;
-	
-	public class WebcamTest extends Sprite {
-		
-		private var webcamVideo:WebcamVideo;
-		private var statsTextField:TextField;
-		private var statsTimer:Timer = new Timer(1000, 0);
-		private var camera:Camera;
-		
-		public function WebcamTest() {
-			
-			camera = Camera.getCamera();
-			camera.setLoopback(false);
-			camera.setMode(640, 640, 15);
-			var cropping:Rectangle = new Rectangle(0, 0, getLowerPowerOfTwo(camera.width), getLowerPowerOfTwo(camera.height));
-			webcamVideo = new WebcamVideo(camera, new Rectangle( (camera.width-cropping.width)~~.5, (camera.height-cropping.height)~~.5, cropping.width, cropping.height), true, WebcamVideo.DRAW_BITMAPDATA|WebcamVideo.UPLOAD_FROM_BITMAPDATA);
-			center(webcamVideo);
-			addChild(webcamVideo);
-			
-			statsTextField = new TextField(200, 100, &quot;CAMERA DEBUG&quot;, &quot;Arial&quot;, 10,  0xFF00FF, true);
-			statsTextField.hAlign = &quot;left&quot;;
-			statsTextField.vAlign = &quot;top&quot;;
-			statsTextField.y = 26;
-			addChild(statsTextField);
-			
-			statsTimer.addEventListener(TimerEvent.TIMER, statsTimer_timerHandler);
-			statsTimer.start();
-		
-		}
-		private function getLowerPowerOfTwo(val:int):int {
-			var result:int = 1;
-			val &gt;&gt;= 1;
-			while (val) {
-			val &gt;&gt;= 1;
-			result &lt;&lt;= 1;
-			}
-			return result;
-		}
-		
-		private function center(wv:WebcamVideo):void {
-			wv.height = Starling.current.stage.stageHeight;
-			wv.scaleX = wv.scaleY;
-			wv.x = (Starling.current.stage.stageWidth - wv.width) ~~ .5;
-			wv.y = (Starling.current.stage.stageHeight - wv.height) ~~ .5;
-			wv.flipHorizontal = wv.camera.position != CameraPosition.BACK;
-		}
-		
-		private function statsTimer_timerHandler(e:TimerEvent):void {
-			statsTextField.text = &quot;FPS:\t&quot; + camera.currentFPS.toFixed(1) + &quot;/&quot; + camera.fps.toFixed(1)
-			+ &quot;\ncam:\t&quot; + camera.width + &quot;x&quot; + camera.height
-			+ &quot;\ntextureClass: &quot; + webcamVideo.texture.root.base
-			+ &quot;\ntexture:\t&quot; + webcamVideo.texture.root.nativeWidth + &quot;x&quot; +  webcamVideo.texture.root.nativeHeight
-			+ &quot;\ndraw:\t&quot; + webcamVideo.drawTime.toFixed(2) + &quot; ms&quot;
-			+ &quot;\nupload:\t&quot; + webcamVideo.uploadTime.toFixed(2) + &quot; ms&quot;
-			+ &quot;\ncomplete:\t&quot; + (webcamVideo.drawTime+webcamVideo.uploadTime).toFixed(2)+&quot; ms&quot;;
-		}
-	}
-}
-		 * </listing>
-		 */
-		
-		public function WebcamVideo(camera:Camera, rect:Rectangle = null, autoStart:Boolean = true, strategy:uint = 0) {
 			var pma:Boolean = true;
-			mCamera = camera;
-			if (rect == null)
-				rect = new Rectangle(0, 0, mCamera.width, mCamera.height);
-			mFrame = new Rectangle(rect.x, rect.y, Math.min(mCamera.width - rect.x, rect.width), Math.min(mCamera.height - rect.y, rect.height));
+			mFrame = rect;
+			mOriginFrame = rect;
+			mCameraList = Camera.names;
+			
 			super(mFrame.width, mFrame.height, 0xffffff, pma);
 			
 			mRecording = autoStart;
@@ -326,47 +169,172 @@ package {
 				throw new ArgumentError("Invalid strategy");
 			mStrategy = strategy;
 			
-			readjustSize(mFrame);
 			mVertexDataCache = new VertexData(4, pma);
 			updateVertexData();
 			
-			if (Camera.isSupported)
-			{
-				if (mCamera.width == -1)
-				{
-					throw new Error("Camera is supported but camera.width=-1\nTip: This can happen if you haven't set the desriptor argument in application.xml.");
-					return;
-				}
-			}
-			else
-			{
-				throw new Error("Camera is not supported.");
-			}
+			
 			
 			addEventListener(starling.events.Event.ADDED_TO_STAGE, addedToStageHandler);
 			
 			// Android / iOS / Blackberry?
-			if(Capabilities.playerType.match(/desktop/i)){
-				try{
+			if (Capabilities.playerType.match(/desktop/i))
+			{
+				try
+				{
 					mNativeApplicationClass = Class(getDefinitionByName("flash.desktop.NativeApplication"));
-					if((Capabilities.os+Capabilities.manufacturer).match(/Android|iOS|iPhone|iPad|iPod|Blackberry/i) && mNativeApplicationClass && mNativeApplicationClass.nativeApplication) {
+					if ((Capabilities.os + Capabilities.manufacturer).match(/Android|iOS|iPhone|iPad|iPod|Blackberry/i) && mNativeApplicationClass && mNativeApplicationClass.nativeApplication)
+					{
 						mNativeApplicationClass.nativeApplication.addEventListener(flash.events.Event.ACTIVATE, activateHandler);
 						mNativeApplicationClass.nativeApplication.addEventListener(flash.events.Event.DEACTIVATE, deactivateHandler);
 					}
-				}catch (err:*) {
+				}
+				catch (err:*)
+				{
 					trace(err.toString())
 				}
 			}
 			// windows and web
 			Starling.current.addEventListener(starling.events.Event.CONTEXT3D_CREATE, contextCreateHandler);
+		
+		}
+		
+		
+		public function setCamera( camParams:CameraParams ):void
+		{
+			
+			if (Camera.isSupported){
+				if (camera.width == -1){
+					throw new Error("Camera is supported but camera.width=-1\nTip: This can happen if you haven't set the desriptor argument in application.xml.");
+					return;
+				}
+			}
+			else{
+				throw new Error("Camera is not supported.");
+			}
+			
+			mCamParams = camParams
+			
+			selectCamera( camParams.cameraID );
+			setCameraRotation(camParams.rotation);
+		}
+		
+		
+		public function selectCamera( cameraID:int ):void
+		{
+			mCurrentCameraID = cameraID;
+			mCamera = Camera.getCamera( cameraID.toString() );
+			
+			if ( (mCamParams.rotation == CameraOrientation.ROTATED_RIGHT || mCamParams.rotation == CameraOrientation.ROTATED_LEFT) ) {
+				mCamera.setMode( mCamParams.height, mCamParams.width, mCamParams.fps );
+				/**/
+			}
+			else {
+				mCamera.setMode( mCamParams.width, mCamParams.height, mCamParams.fps );		
+				/**/
+			}
+			
+			mCamera.setLoopback( mCamParams.loopBack );
+			mCamera.setQuality( mCamParams.bandwidth, mCamParams.quality );
+			
+			
+			
+			readjustSize(null);
+			
+			if ( Capabilities.manufacturer == "Android Linux" ) {
+				if ( mCamera.position == CameraPosition.FRONT ) {
+					//flipVertical = true;
+					flipHorizontal = true;
+					updateVertexData();
+				}
+				else if ( mCamera.position == CameraPosition.BACK ) {
+					//flipVertical = false;
+					flipHorizontal = false;
+					updateVertexData();
+				}
+			}
+			
+			
+			onCameraChange();
+			trace( "mCurrentCameraID : " + mCurrentCameraID );
+		}
+		
+		public function switchCamera( cameraID:int = -1 ):void
+		{
+			var nextCamera:int = mCurrentCameraID;
+			if ( cameraID != -1 ) {
+				selectCamera( cameraID );
+			}
+			else {
+				if ( mCurrentCameraID + 1 < mCameraList.length ) {
+					nextCamera++
+				}
+				else{
+					nextCamera = 0;
+				}
+				
+				if ( nextCamera != mCurrentCameraID ) {
+					mCamParams.cameraID = nextCamera
+					selectCamera( nextCamera ); 
+				}
+				
+			}
+		}
+		
+		
+		public function setCameraRotation( value:String = CameraOrientation.DEFAULT):void
+		{
+			trace( "setCameraRotation : " + setCameraRotation );
+			if ( mCurrentRotation == value ) return;
+			
+			mCurrentRotation = value;
+			trace( this.width );
+			
+			switch( value ) {
+				case CameraOrientation.ROTATED_LEFT :
+					this.pivotX = this.width;
+					this.pivotY = 0;
+					this.width = mOriginFrame.height;
+					this.scaleY = this.scaleX;
+					this.rotation = deg2rad( -90);
+					this.x = 0;
+					this.y = 0;
+				break;
+				case CameraOrientation.ROTATED_RIGHT :
+					this.pivotX = 0;
+					this.pivotY = 0;
+					this.width = mOriginFrame.height;
+					this.scaleY = this.scaleX;
+					this.rotation =  deg2rad(90);
+					this.x = mOriginFrame.width;
+					this.y = 0;
+				break;
+			case CameraOrientation.DEFAULT :
+					this.height = mOriginFrame.height;;
+					this.scaleX = this.scaleY;
+					this.rotation =  deg2rad(0);
+					this.x = 0;
+					this.y = 0;
+				break;
+				case CameraOrientation.UPSIDE_DOWN  :
+					this.pivotX = this.width *.5;
+					this.pivotY = this.height * .5;
+					this.height = mOriginFrame.height;
+					this.scaleX = this.scaleY;
+					this.x = this.width *.5;
+					this.y = this.height *.5;
+					this.rotation =  deg2rad(180);
+				break;
+			}
+			
+			trace( this.width );
 			
 		}
 		
 		/**
 		 * Resume on application focus for mobile devices.
-		 * @param	e
+		 * @param        e
 		 */
-		private function activateHandler(e:flash.events.Event):void 
+		private function activateHandler(e:flash.events.Event):void
 		{
 			mCamera.setMode(mCamera.width, mCamera.height, mCamera.fps);
 			start(mAutoStartAfterHandledLostContext);
@@ -374,7 +342,7 @@ package {
 		
 		/**
 		 * Starting the camera if the instance is added to the stage and autoStart true.
-		 * @param	e
+		 * @param        e
 		 */
 		private function addedToStageHandler(e:starling.events.Event):void
 		{
@@ -386,7 +354,7 @@ package {
 		
 		/**
 		 * Stops the camera if the instance is removed from the stage and autoStart true.
-		 * @param	e
+		 * @param        e
 		 */
 		private function camera_statusHandler(e:StatusEvent):void
 		{
@@ -395,7 +363,7 @@ package {
 		
 		/**
 		 * Is called when a new frame is available.
-		 * @param	e
+		 * @param        e
 		 */
 		private function camera_videoFrameHandler(e:flash.events.Event):void
 		{
@@ -413,7 +381,7 @@ package {
 		
 		/**
 		 * Restart after device loss.
-		 * @param	e
+		 * @param        e
 		 */
 		private function contextCreateHandler(e:starling.events.Event):void
 		{
@@ -442,9 +410,9 @@ package {
 		
 		/**
 		 * Pause on lost application focus for mobile devices.
-		 * @param	e
+		 * @param        e
 		 */
-		private function deactivateHandler(e:flash.events.Event):void 
+		private function deactivateHandler(e:flash.events.Event):void
 		{
 			mAutoStartAfterHandledLostContext = isActive;
 			pause();
@@ -460,7 +428,8 @@ package {
 			mCamera.removeEventListener(StatusEvent.STATUS, camera_statusHandler);
 			mCamera.removeEventListener(flash.events.Event.VIDEO_FRAME, camera_videoFrameHandler);
 			Starling.current.removeEventListener(starling.events.Event.CONTEXT3D_CREATE, contextCreateHandler);
-			if(mNativeApplicationClass){
+			if (mNativeApplicationClass)
+			{
 				mNativeApplicationClass.nativeApplication.removeEventListener(flash.events.Event.ACTIVATE, activateHandler);
 				mNativeApplicationClass.nativeApplication.removeEventListener(flash.events.Event.DEACTIVATE, deactivateHandler);
 			}
@@ -487,8 +456,7 @@ package {
 		{
 			if (!contextStatus)
 				return;
-				
-			mTime = getTimer();
+			
 			if ((mStrategy & BIT_UPLOAD) == UPLOAD_FROM_BITMAPDATA)
 			{
 				if ((mStrategy & BIT_DRAW) == DRAW_BITMAPDATA)
@@ -513,11 +481,8 @@ package {
 					mCamera.copyToByteArray(mFrame, mByteArray);
 				}
 			}
-			mStatsDrawTime.unshift(getTimer() - mTime);
-			while (mStatsDrawTime.length > statsPrecision)
-				mStatsDrawTime.pop();
+			
 			mNewFrameAvailable = false;
-			++mStatsDrawnFrames;
 			dispatchEventWith(VideoEvent.DRAW_COMPLETE);
 		}
 		
@@ -560,11 +525,8 @@ package {
 		 */
 		public function readjustSize(rectangle:Rectangle = null):void
 		{
-			if (!contextStatus) return;
-			mStatsDrawnFrames = 0;
-			mStatsUploadedFrames = 0;
-			mStatsDrawTime = new Vector.<uint>();
-			mStatsUploadTime = new Vector.<uint>();
+			if (!contextStatus)
+				return;
 			
 			if (rectangle == null)
 				rectangle = new Rectangle(0, 0, mCamera.width, mCamera.height);
@@ -594,21 +556,24 @@ package {
 			
 			var w:int = mFrame.width;
 			var h:int = mFrame.height;
-			var potWidth:int   = getNextPowerOfTwo(w);
-            var potHeight:int  = getNextPowerOfTwo(h);
-            var isPot:Boolean  = (w == potWidth && h == potHeight);
-            var useRectTexture:Boolean = Starling.current.profile != Context3DProfile.BASELINE_CONSTRAINED &&
-                "createRectangleTexture" in Starling.context;
-			if (!useRectTexture) {
+			var potWidth:int = getNextPowerOfTwo(w);
+			var potHeight:int = getNextPowerOfTwo(h);
+			var isPot:Boolean = (w == potWidth && h == potHeight);
+			var useRectTexture:Boolean = Starling.current.profile != Context3DProfile.BASELINE_CONSTRAINED && "createRectangleTexture" in Starling.context;
+			if (!useRectTexture)
+			{
 				w = potWidth;
 				h = potHeight;
 			}
 			mBitmapData = new BitmapData(w, h, (mStrategy & BIT_ALPHA) == ALPHA, 0);
 			mBitmapData.lock();
 			_texture = starling.textures.Texture.fromBitmapData(mBitmapData, false) as ConcreteTexture;
-			if ((mStrategy & BIT_DRAW) == DRAW_BITMAPDATA || (mStrategy & BIT_UPLOAD) == UPLOAD_FROM_BITMAPDATA){
+			if ((mStrategy & BIT_DRAW) == DRAW_BITMAPDATA || (mStrategy & BIT_UPLOAD) == UPLOAD_FROM_BITMAPDATA)
+			{
 				//keep bitmapData
-			}else {
+			}
+			else
+			{
 				mBitmapData.dispose();
 				mBitmapData = null;
 			}
@@ -620,14 +585,14 @@ package {
 			mVertexData.setPosition(2, 0.0, mFrame.height);
 			mVertexData.setPosition(3, mFrame.width, mFrame.height);
 			onVertexDataChanged();
-			
+		
 			// if you're using an older version of Starling and get a compile time error, replace the line above with:
 			// _texture = starling.textures.Texture.empty(mFrame.width, mFrame.height, true, false, -1);
 		}
 		
 		/**
 		 * Stops the camera if the instance is removed from the stage and autoStart true.
-		 * @param	e
+		 * @param        e
 		 */
 		private function removedFromStageHandler(e:starling.events.Event):void
 		{
@@ -638,12 +603,13 @@ package {
 		/** @inheritDoc */
 		public override function render(support:RenderSupport, parentAlpha:Number):void
 		{
-			if(mTexture) support.batchQuad(this, parentAlpha, mTexture, mSmoothing);
+			if (mTexture)
+				support.batchQuad(this, parentAlpha, mTexture, mSmoothing);
 		}
 		
 		/**
 		 * Starting/Resuming the camera.
-		 * @param	forceRecording
+		 * @param        forceRecording
 		 * Starts the camera even if the WebcamVideo has not been added to stage. E.g. to use the texture
 		 * in multiple Images, a ParticleSystem, with a custom renderer or whatever, instead of the WebcamVideo itself.
 		 *  @see pause()
@@ -681,6 +647,16 @@ package {
 			mVertexDataCacheInvalid = true;
 		}
 		
+		/* not useful anymore
+		 * public function rotationVideo():void
+		{
+			mVertexData.setTexCoords(0, 1.0, 0.0);
+			mVertexData.setTexCoords(1, 1.0, 1.0);
+			mVertexData.setTexCoords(2, 0.0, 0.0);
+			mVertexData.setTexCoords(3, 0.0, 1.0);
+			mVertexDataCacheInvalid = true;
+		}*/
+		
 		/**
 		 * Uploading the BitmapData/ByteArray, according to the chosen strategy.
 		 * @see WebcamVideo
@@ -690,7 +666,6 @@ package {
 			if (!contextStatus)
 				return;
 			
-			mTime = getTimer();
 			if ((mStrategy & BIT_UPLOAD) == UPLOAD_FROM_BITMAPDATA)
 			{
 				mTextureClass(mTexture.base).uploadFromBitmapData(mBitmapData);
@@ -699,27 +674,8 @@ package {
 			{
 				mTextureClass(mTexture.base).uploadFromByteArray(mByteArray, 0);
 			}
-			mStatsUploadTime.unshift(getTimer() - mTime);
-			while (mStatsUploadTime.length > statsPrecision)
-				mStatsUploadTime.pop();
-			++mStatsUploadedFrames;
 			dispatchEventWith(VideoEvent.UPLOAD_COMPLETE);
 		}
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
 		
 		/**
 		 * The bitmapData with the camera image (if in use), for example to calculate stuff in a game or augmented reality application.
@@ -750,18 +706,6 @@ package {
 		}
 		
 		/**
-		 * Stops the WebcamVideo, sets the new camera object with optional cropping rectangle and restarts recording if it has been active before.
-		 */
-		public function setCamera(camera:Camera, rect:Rectangle = null):void
-		{
-			var recording:Boolean = mRecording;
-			stop();
-			mCamera = camera;
-			readjustSize(rect);
-			if(recording) start(mForceRecording);
-		}
-		
-		/**
 		 * Returns a Boolean whether the context is available or not (e.g. disposed)
 		 * @return
 		 */
@@ -782,28 +726,6 @@ package {
 				return false;
 			}
 			return true;
-		}
-		
-		/**
-		 * Returns the number of drawn frames since the last call of start(), stop(), pause() or readjustSize()
-		 */
-		public function get drawnFrames():uint
-		{
-			return mStatsDrawnFrames;
-		}
-		
-		/**
-		 * Returns the average drawing time (up to 15 frames, if already available)
-		 */
-		public function get drawTime():Number
-		{
-			var res:Number = 0;
-			var len:uint = mStatsDrawTime.length;
-			for (var i:int = len - 1; i >= 0; --i)
-			{
-				res += mStatsDrawTime[i];
-			}
-			return res / len;
 		}
 		
 		/**
@@ -901,37 +823,16 @@ package {
 			}
 			else if (value != mTexture)
 			{
-				if (mTexture) mTexture.dispose();
+				if (mTexture)
+					mTexture.dispose();
 				mTexture = value;
 				mTextureClass = Class(getDefinitionByName(getQualifiedClassName(mTexture.base)));
-				if(mTexture["onRestore"])mTexture["onRestore"] = null;
+				if (mTexture["onRestore"])
+					mTexture["onRestore"] = null;
 				mVertexData.setPremultipliedAlpha(mTexture.premultipliedAlpha);
 				onVertexDataChanged();
 			}
 		}
-		
-		/**
-		 * Returns the number of uploaded frames since the last call of start(), stop(), pause() or readjustSize()
-		 */
-		public function get uploadedFrames():uint
-		{
-			return mStatsUploadedFrames;
-		}
-		
-		/**
-		 * Returns the average upload time (up to 15 frames, if already available)
-		 */
-		public function get uploadTime():Number
-		{
-			var res:Number = 0;
-			var len:uint = mStatsUploadTime.length;
-			for (var i:int = len - 1; i >= 0; --i)
-			{
-				res += mStatsUploadTime[i];
-			}
-			return res / len;
-		}
-		
 	}
 
 }

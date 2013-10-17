@@ -110,14 +110,10 @@
 package
 {
     import flash.geom.Rectangle;
-    import flash.media.CameraPosition;
-    import flash.media.Camera;
-    import flash.events.TimerEvent;
-    import flash.utils.Timer;
     
     import starling.core.Starling;
     import starling.display.Sprite;
-    import starling.extensions.WebcamVideo;
+    import com.tictac.painting.view.profile.WebcamVideo;
     import starling.textures.Texture;
     import starling.text.TextField;
     
@@ -126,50 +122,16 @@ package
         
         private var webcamVideo:WebcamVideo;
         private var statsTextField:TextField;
-        private var statsTimer:Timer = new Timer(1000, 0);
-        private var camera:Camera;
         
         public function WebcamTest()
         {
         
-            camera = Camera.getCamera();
-            camera.setLoopback(false);
-            camera.setMode(1280, 720, 15);
-        
-            webcamVideo = new WebcamVideo(camera);
-            center(webcamVideo);
+            webcamVideo = new WebcamVideo( new Rectangle( 0, 0, stageW, stageW ) );
+            webcamVideo.setCamera( new CameraParams( stageW, stageW, 18, isMobile ? CameraOrientation.ROTATED_RIGHT : CameraOrientation.DEFAULT) );
+            webcamVideo.y = stageH - stageW >> 1;
             addChild(webcamVideo);
-        
-            statsTextField = new TextField(200, 100, "CAMERA DEBUG", "Arial", 10, 0xFF00FF, true);
-            statsTextField.hAlign = "left";
-            statsTextField.vAlign = "top";
-            statsTextField.y = 26;
-            addChild(statsTextField);
-        
-            statsTimer.addEventListener(TimerEvent.TIMER, statsTimer_timerHandler);
-            statsTimer.start();
-            
-        }
-        
-        private function center(wv:WebcamVideo):void
-        {
-            wv.height = Starling.current.stage.stageHeight;
-            wv.scaleX = wv.scaleY;
-            wv.x = (Starling.current.stage.stageWidth - wv.width) * .5;
-            wv.y = (Starling.current.stage.stageHeight - wv.height) * .5;
-            wv.flipHorizontal = wv.camera.position != CameraPosition.BACK;
-        }
-        
-        
-        private function statsTimer_timerHandler(e:TimerEvent):void {
-            statsTextField.text = "FPS:\t" + camera.currentFPS.toFixed(1) + "/" + camera.fps.toFixed(1)
-            + "\ncam:\t" + camera.width + "x" + camera.height
-            + "\ntextureClass: " + webcamVideo.texture.root.base
-            + "\ntexture:\t" + webcamVideo.texture.root.nativeWidth + "x" +  webcamVideo.texture.root.nativeHeight
-            + "\ndraw:\t" + webcamVideo.drawTime.toFixed(2) + " ms"
-            + "\nupload:\t" + webcamVideo.uploadTime.toFixed(2) + " ms"
-            + "\ncomplete:\t" + (webcamVideo.drawTime+webcamVideo.uploadTime).toFixed(2)+" ms";
-        }
+			
+        }     
     }
 }
          </pre></div>
