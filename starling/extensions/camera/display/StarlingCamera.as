@@ -20,7 +20,7 @@
  *	THE SOFTWARE.
  */
 
-package de.flintfabrik.starling.display
+package starling.extensions.camera.display
 {
 	import flash.desktop.*;
 	import flash.display.BitmapData;
@@ -42,8 +42,8 @@ package de.flintfabrik.starling.display
 	import starling.core.Starling;
 	import starling.display.Quad;
 	import starling.events.Event;
-	import de.flintfabrik.starling.display.data.CameraParams;
-	import de.flintfabrik.starling.display.events.VideoEvent;
+	import starling.extensions.camera.display.data.CameraParams;
+	import starling.extensions.camera.display.events.VideoEvent;
 	import starling.textures.ConcreteTexture;
 	import starling.textures.Texture;
 	import starling.textures.TextureSmoothing;
@@ -91,7 +91,7 @@ package de.flintfabrik.starling.display
 	 *  @author Alan Langlois based on the Michael Trenkler's work
 	 */
 	
-	public class WebcamVideo extends Quad
+	public class StarlingCamera extends Quad
 	{
 		
 		public static const DRAW_BITMAPDATA:int = 0;
@@ -154,7 +154,7 @@ package de.flintfabrik.starling.display
 		 * @example The following code shows a simple usage in Flash 11.8 / AIR 3.8 and above:
 		 * <listing version="3.8">**/
 		
-		public function WebcamVideo( rect:Rectangle, autoStart:Boolean = true, strategy:uint = 0)
+		public function StarlingCamera( rect:Rectangle, autoStart:Boolean = true, strategy:uint = 0)
 		{
 			
 			var pma:Boolean = true;

@@ -20,7 +20,7 @@
  *	THE SOFTWARE.
  */
 
-package de.flintfabrik.starling.events
+package starling.extensions.camera.events
 {
     
 	import starling.events.Event;

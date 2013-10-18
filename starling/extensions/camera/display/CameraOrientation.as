@@ -1,4 +1,4 @@
-package de.flintfabrik.starling.display
+package starling.extensions.camera.display
 {
 	/**
 	 * ...

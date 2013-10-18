@@ -1,4 +1,4 @@
-package de.flintfabrik.starling.data
+package starling.extensions.camera.data
 {
 	import starling.extensions.camera.display.CameraOrientation;
 	/**
